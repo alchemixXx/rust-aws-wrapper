@@ -1,0 +1,16 @@
+[package]
+name = "raw"
+version = "0.1.0"
+edition = "2021"
+authors = ["alskarf@gmail.com>"]
+description = "A Rust wrapper for AWS CLI with enhanced functionality"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+tokio = { version = "1.36", features = ["full"] }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_derive = "1.0.136"
+log = "0.4.21"
+env_logger = "0.11.3"
