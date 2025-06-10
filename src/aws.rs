@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
 
 use crate::{
+    aws_sso::AwsSso,
     custom_error::{CustomError, CustomResult},
     logger::Logger,
 };
@@ -29,7 +30,6 @@ impl AwsCli {
         let output = Command::new("zsh")
             .arg("-c")
             .arg(command)
-            // .current_dir()
             .output()
             .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
 
@@ -61,10 +61,9 @@ impl AwsCli {
     pub fn change_role(self, role: &str) -> CustomResult<()> {
         // aws sso login --sso-session sso
         let logger = Logger::new();
-        logger.info(format!("Changing AWS role").as_str());
-        let command = format!("sso -profile {}", role,);
-
-        self.execute_zsh_command(&command)?;
+        logger.info(format!("Changing AWS role to '{}'", role).as_str());
+        AwsSso::new(role.to_string()).set_sso_credentials()?;
+        logger.info(format!("Changed AWS role to '{}'", role).as_str());
 
         Ok(())
     }
@@ -72,12 +71,18 @@ impl AwsCli {
     pub async fn create_pull_request(
         &self,
         repo: &str,
-        title: &str,
+        title: Option<&str>,
         source: &str,
         target: &str,
     ) -> CustomResult<String> {
         let logger = Logger::new();
         logger.info(format!("Creating PR in AWS: {}", repo).as_str());
+
+        let title = match title {
+            Some(t) => t.to_string(),
+            None => self.get_commit_message()?,
+        };
+
         let command = format!(
             "aws codecommit create-pull-request --title '{0}' --targets repositoryName={1},sourceReference={2},destinationReference={3}",
             title,
@@ -99,6 +104,16 @@ impl AwsCli {
 
         Ok(pr_link)
     }
-}
 
-// aws codecommit create-pull-request --title "Test title" --targets repositoryName="conform5-bpo-api",sourceReference="task/tk-73990-fixed-deps",destinationReference="dev-110"
+    fn get_commit_message(&self) -> CustomResult<String> {
+        let logger = Logger::new();
+        logger.info("Getting commit message");
+
+        let output = self.execute_zsh_command("git log -1 --pretty=%B")?;
+
+        let commit_message = String::from_utf8(output.stdout)
+            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
+
+        Ok(commit_message.trim().to_string())
+    }
+}

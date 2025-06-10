@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+use crate::constants::DEV_ROLE;
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
@@ -20,7 +22,7 @@ pub enum Commands {
     CreatePr {
         /// Title of the pull request
         #[arg(short, long)]
-        name: String,
+        name: Option<String>,
 
         /// Source branch
         #[arg(short, long)]
@@ -31,13 +33,14 @@ pub enum Commands {
         target: String,
     },
     Login {},
+    BecomeDev {},
     /// Change AWS role
     ChangeRole {
         /// Role to change to
         #[arg(
             short,
             long,
-            default_value = "conform5-edetek-dev-01.conform5-batch-dev"
+            default_value = DEV_ROLE
         )]
         role: String,
     },
