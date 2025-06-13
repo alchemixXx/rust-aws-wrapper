@@ -36,20 +36,20 @@ impl Logger {
         env_logger::Builder::from_env(Env::default().default_filter_or(level.to_string())).init();
     }
 
-    pub fn debug(&self, message: &str) {
-        log::debug!("{}", message);
+    pub fn debug<S: AsRef<str>>(&self, message: S) {
+        log::debug!("{}", message.as_ref());
     }
 
-    pub fn info(&self, message: &str) {
-        log::info!("{}", message);
+    pub fn info<S: AsRef<str>>(&self, message: S) {
+        log::info!("{}", message.as_ref());
     }
 
-    pub fn warn(&self, message: &str) {
-        log::warn!("{}", message);
+    pub fn warn<S: AsRef<str>>(&self, message: S) {
+        log::warn!("{}", message.as_ref());
     }
 
-    pub fn error(&self, message: &str) {
-        log::error!("{}", message);
+    pub fn error<S: AsRef<str>>(&self, message: S) {
+        log::error!("{}", message.as_ref());
     }
 }
 

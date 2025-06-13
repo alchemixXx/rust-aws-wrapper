@@ -4,10 +4,6 @@ pub type CustomResult<T> = core::result::Result<T, CustomError>;
 #[allow(dead_code)]
 pub enum CustomError {
     CommandExecution(String),
-    UnknownBranch,
-    ConfigParsingError(String),
-    NpmConfigError(String),
-    VersionBuild(String),
 }
 
 impl std::error::Error for CustomError {}

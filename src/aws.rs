@@ -3,6 +3,7 @@ use std::process::{Command, Output};
 
 use crate::{
     aws_sso::AwsSso,
+    constants,
     custom_error::{CustomError, CustomResult},
     logger::Logger,
 };
@@ -18,15 +19,18 @@ struct PullRequest {
     pull_request_id: String,
 }
 
-pub struct AwsCli {}
+pub struct AwsCli {
+    logger: Logger,
+}
 
 impl AwsCli {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            logger: Logger::new(),
+        }
     }
 
     fn execute_zsh_command(&self, command: &str) -> CustomResult<Output> {
-        let logger = Logger::new();
         let output = Command::new("zsh")
             .arg("-c")
             .arg(command)
@@ -34,8 +38,12 @@ impl AwsCli {
             .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
 
         if !output.status.success() {
-            logger.error(format!("Failed to execute command: {}", command).as_str());
-            logger.error(format!("Error: {}", String::from_utf8_lossy(&output.stderr)).as_str());
+            self.logger
+                .error(format!("Failed to execute command: {}", command));
+            self.logger.error(format!(
+                "Error: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
 
             return Err(CustomError::CommandExecution(
                 "Failed to execute command".to_string(),
@@ -45,25 +53,21 @@ impl AwsCli {
         Ok(output)
     }
 
-    pub fn login(self) -> CustomResult<()> {
-        let logger = Logger::new();
-        logger.info(format!("Logging in to AWS").as_str());
-        let command = format!("aws sso login --sso-session sso",);
+    pub fn login(&self) -> CustomResult<()> {
+        self.logger.info("Logging in to AWS");
 
-        self.execute_zsh_command(&command)?;
+        let command = "aws sso login --sso-session sso";
+        self.execute_zsh_command(command)?;
+
+        self.logger.info("Logged in to AWS");
 
         Ok(())
     }
 
-    /*
-    NOT WORKING YET
-     */
-    pub fn change_role(self, role: &str) -> CustomResult<()> {
-        // aws sso login --sso-session sso
-        let logger = Logger::new();
-        logger.info(format!("Changing AWS role to '{}'", role).as_str());
+    fn change_role(&self, role: &str) -> CustomResult<()> {
+        self.logger.info(format!("Changing AWS role to '{}'", role));
         AwsSso::new(role.to_string()).set_sso_credentials()?;
-        logger.info(format!("Changed AWS role to '{}'", role).as_str());
+        self.logger.info(format!("Changed AWS role to '{}'", role));
 
         Ok(())
     }
@@ -75,8 +79,9 @@ impl AwsCli {
         source: &str,
         target: &str,
     ) -> CustomResult<String> {
-        let logger = Logger::new();
-        logger.info(format!("Creating PR in AWS: {}", repo).as_str());
+        self.change_role(constants::DEV_ROLE)?;
+
+        self.logger.info(format!("Creating PR in AWS: {}", repo));
 
         let title = match title {
             Some(t) => t.to_string(),
@@ -101,18 +106,20 @@ impl AwsCli {
             repo,
             commit.pull_request.pull_request_id
         );
+        self.logger.info(format!("Created PR in AWS: {}", repo));
 
         Ok(pr_link)
     }
 
     fn get_commit_message(&self) -> CustomResult<String> {
-        let logger = Logger::new();
-        logger.info("Getting commit message");
+        self.logger.info("Getting commit message");
 
         let output = self.execute_zsh_command("git log -1 --pretty=%B")?;
 
         let commit_message = String::from_utf8(output.stdout)
             .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
+
+        self.logger.info("Got commit message");
 
         Ok(commit_message.trim().to_string())
     }

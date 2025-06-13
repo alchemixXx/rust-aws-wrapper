@@ -2,7 +2,10 @@ use anyhow::Context;
 use serde::Deserialize;
 use std::{env, fs, process::Command};
 
-use crate::custom_error::{CustomError, CustomResult};
+use crate::{
+    custom_error::{CustomError, CustomResult},
+    logger::Logger,
+};
 
 #[derive(Debug)]
 struct SsoInput {
@@ -40,16 +43,19 @@ struct SsoResponse {
 
 pub struct AwsSso {
     input: SsoInput,
+    logger: Logger,
 }
 
 impl AwsSso {
     pub fn new(profile: String) -> Self {
         Self {
             input: SsoInput { profile },
+            logger: Logger::new(),
         }
     }
 
     pub fn set_sso_credentials(&self) -> CustomResult<()> {
+        self.logger.info("Setting AWS SSO credentials");
         let profile_info = self.get_sso_profile_info(&self.input.profile)?;
         let token = self.get_latest_sso_token()?;
 
@@ -60,14 +66,10 @@ impl AwsSso {
             &profile_info.region,
         )?;
 
-        // println!("creds: {:#?}", creds);
-
-        // println!("export AWS_ACCESS_KEY_ID='{}'", creds.access_key_id);
-        // println!("export AWS_SECRET_ACCESS_KEY='{}'", creds.secret_access_key);
-        // println!("export AWS_SESSION_TOKEN='{}'", creds.session_token);
-
         // Set them as env vars for current process
         self.set_environment_variables(&creds)?;
+
+        self.logger.info("AWS SSO credentials set successfully");
 
         Ok(())
     }
@@ -121,6 +123,8 @@ impl AwsSso {
     }
 
     fn get_profile_block(&self, config_contents: &str, profile_name: &str) -> CustomResult<String> {
+        self.logger
+            .info(format!("Fetching profile block for '{}'", profile_name));
         let profile_header = format!("[profile {}]", profile_name);
         let lines = config_contents.lines();
         let mut capture = false;
@@ -142,16 +146,26 @@ impl AwsSso {
         }
 
         if !capture {
+            self.logger.error(format!(
+                "Profile '{}' not found in AWS config",
+                profile_name
+            ));
             Err(CustomError::CommandExecution(format!(
                 "Profile '{}' not found in AWS config",
                 profile_name
             )))
         } else {
+            self.logger.info(format!(
+                "Profile block for '{}' fetched successfully",
+                profile_name
+            ));
             Ok(block)
         }
     }
 
     fn parse_profile_values(&self, profile_block: &str) -> CustomResult<ProfileInfo> {
+        self.logger
+            .info("Parsing profile values from profile block");
         let mut account_id = None;
         let mut role_name = None;
         let mut region = None;
@@ -176,21 +190,31 @@ impl AwsSso {
                 role_name,
                 region,
             }),
-            _ => Err(CustomError::CommandExecution(
-                "Missing one or more required fields in profile block".to_string(),
-            )),
+            _ => {
+                self.logger
+                    .error("Missing one or more required fields in profile block");
+                Err(CustomError::CommandExecution(
+                    "Missing one or more required fields in profile block".to_string(),
+                ))
+            }
         }
     }
 
     fn get_sso_profile_info(&self, profile_name: &str) -> CustomResult<ProfileInfo> {
+        self.logger
+            .info(format!("Fetching SSO profile info for '{}'", profile_name));
         let config_path = dirs::home_dir()
             .context("Failed to get home directory")
             .map_err(|err| {
+                self.logger
+                    .error(format!("Failed to get home directory: {}", err));
                 CustomError::CommandExecution(format!("Failed to get home directory: {}", err))
             })?
             .join(".aws/config");
 
         let contents = fs::read_to_string(config_path).map_err(|err| {
+            self.logger
+                .error(format!("Failed to read AWS config file: {}", err));
             CustomError::CommandExecution(format!("Failed to read AWS config file: {}", err))
         })?;
 
@@ -223,10 +247,16 @@ impl AwsSso {
             .output()
             .context("Failed to execute aws sso get-role-credentials")
             .map_err(|err| {
+                self.logger
+                    .error(format!("Failed to execute AWS CLI command: {}", err));
                 CustomError::CommandExecution(format!("Failed to execute AWS CLI command: {}", err))
             })?;
 
         if !output.status.success() {
+            self.logger.error(format!(
+                "AWS CLI command failed: {}",
+                String::from_utf8_lossy(&output.stdout)
+            ));
             return Err(CustomError::CommandExecution(format!(
                 "AWS CLI command failed: {}",
                 String::from_utf8_lossy(&output.stderr)
@@ -234,43 +264,22 @@ impl AwsSso {
         }
 
         let resp: SsoResponse = serde_json::from_slice(&output.stdout).map_err(|err| {
+            self.logger
+                .error(format!("Failed to parse AWS CLI response: {}", err));
             CustomError::CommandExecution(format!("Failed to parse AWS CLI response: {}", err))
         })?;
         Ok(resp.role_credentials)
     }
 
     fn set_environment_variables(&self, creds: &RoleCredentials) -> CustomResult<()> {
+        self.logger
+            .info("Setting environment variables for AWS credentials");
         env::set_var("AWS_ACCESS_KEY_ID", &creds.access_key_id);
         env::set_var("AWS_SECRET_ACCESS_KEY", &creds.secret_access_key);
         env::set_var("AWS_SESSION_TOKEN", &creds.session_token);
 
+        self.logger.info("Environment variables set successfully");
+
         Ok(())
-
-        // let command = format!(
-        //     "
-        // export AWS_ACCESS_KEY_ID='{}';
-        // export AWS_SECRET_ACCESS_KEY='{}';
-        // export AWS_SESSION_TOKEN='{}';
-        // ",
-        //     creds.access_key_id, creds.secret_access_key, creds.session_token
-        // );
-
-        // // let logger = Logger::new();
-        // let output = Command::new("zsh")
-        //     .arg("-c")
-        //     .arg(command)
-        //     .output()
-        //     .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
-
-        // if !output.status.success() {
-        //     // logger.error(format!("Failed to execute command: {}", command).as_str());
-        //     // logger.error(format!("Error: {}", String::from_utf8_lossy(&output.stderr)).as_str());
-
-        //     return Err(CustomError::CommandExecution(
-        //         "Failed to execute command".to_string(),
-        //     ));
-        // }
-
-        // Ok(())
     }
 }
