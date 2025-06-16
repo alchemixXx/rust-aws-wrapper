@@ -34,6 +34,16 @@ async fn main() -> CustomResult<()> {
             aws_cli.login()?;
             logger.info("Login successfully completed");
         }
+        Commands::LoginNpm {} => {
+            logger.info("Logging in to NPM");
+            aws_cli.login_npm()?;
+            logger.info("Logged in to NPM successfully");
+        }
+        Commands::LoginPip {} => {
+            logger.info("Logging in to PIP");
+            aws_cli.login_pip()?;
+            logger.info("Logged in to PIP successfully");
+        }
     }
 
     Ok(())

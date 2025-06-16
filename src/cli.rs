@@ -24,4 +24,6 @@ pub enum Commands {
         target: String,
     },
     Login {},
+    LoginNpm {},
+    LoginPip {},
 }

@@ -111,6 +111,27 @@ impl AwsCli {
         Ok(pr_link)
     }
 
+    pub fn login_npm(&self) -> CustomResult<()> {
+        self.logger.info("Logging in to NPM");
+        let command = format!("aws codeartifact login --tool npm --repository conform5-npm-common --domain conform --domain-owner {} --region us-east-1 --profile {}", constants::DOMAIN_OWNER, constants::DEV_ROLE);
+        self.execute_zsh_command(&command)?;
+
+        self.logger.info("Logged in to NPM");
+
+        Ok(())
+    }
+
+    //
+
+    pub fn login_pip(&self) -> CustomResult<()> {
+        self.logger.info("Logging in to NPM");
+        let command = format!("aws codeartifact login --tool pip --repository conform5-python-common --domain conform5-python --domain-owner {} --region us-east-1 --profile {}", constants::DOMAIN_OWNER, constants::DEV_ROLE);
+        self.execute_zsh_command(&command)?;
+
+        self.logger.info("Logged in to NPM");
+
+        Ok(())
+    }
     fn get_commit_message(&self) -> CustomResult<String> {
         self.logger.info("Getting commit message");
 
