@@ -26,4 +26,5 @@ pub enum Commands {
     Login {},
     LoginNpm {},
     LoginPip {},
+    Morning {},
 }

@@ -1,12 +1,24 @@
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
 
+use chrono::{DateTime, Utc};
+use dirs;
+use glob::glob;
+use std::fs;
+
 use crate::{
     aws_sso::AwsSso,
     constants,
     custom_error::{CustomError, CustomResult},
     logger::Logger,
 };
+
+#[derive(Debug, Deserialize)]
+struct SsoCacheEntry {
+    startUrl: Option<String>,
+    expiresAt: Option<DateTime<Utc>>,
+    _accessToken: Option<String>,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,8 +68,17 @@ impl AwsCli {
     pub fn login(&self) -> CustomResult<()> {
         self.logger.info("Logging in to AWS");
 
-        let command = "aws sso login --sso-session sso";
-        self.execute_zsh_command(command)?;
+        let sso_is_valid = self.sso_token_still_valid(constants::SSO_START_URL)?;
+
+        if sso_is_valid {
+            self.logger
+                .info("SSO token is valid, no need to log in again.");
+        } else {
+            self.logger
+                .info("SSO token is not valid, checking for existing session...");
+            let command = "aws sso login --sso-session sso";
+            self.execute_zsh_command(command)?;
+        }
 
         self.logger.info("Logged in to AWS");
 
@@ -107,6 +128,7 @@ impl AwsCli {
             commit.pull_request.pull_request_id
         );
         self.logger.info(format!("Created PR in AWS: {}", repo));
+        println!("Pull Request Link: {}", pr_link);
 
         Ok(pr_link)
     }
@@ -120,8 +142,6 @@ impl AwsCli {
 
         Ok(())
     }
-
-    //
 
     pub fn login_pip(&self) -> CustomResult<()> {
         self.logger.info("Logging in to NPM");
@@ -143,5 +163,60 @@ impl AwsCli {
         self.logger.info("Got commit message");
 
         Ok(commit_message.trim().to_string())
+    }
+
+    fn sso_token_still_valid(&self, sso_start_url: &str) -> CustomResult<bool> {
+        let cache_dir = dirs::home_dir()
+            .ok_or("Failed to get home directory")
+            .map_err(|err| CustomError::CommandExecution(err.to_string()))?
+            .join(".aws/sso/cache");
+
+        let pattern = cache_dir.join("*.json");
+        let glob_pattern = pattern
+            .to_str()
+            .ok_or("Failed to convert pattern to string")
+            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
+
+        let paths =
+            glob(glob_pattern).map_err(|err| CustomError::CommandExecution(err.to_string()))?;
+
+        for entry in paths {
+            let path = match entry {
+                Ok(p) => p,
+                Err(e) => {
+                    self.logger
+                        .error(format!("Skipping invalid glob entry: {}", e));
+                    continue;
+                }
+            };
+
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.logger
+                        .error(format!("Skipping unreadable file {:?}: {}", path, e));
+                    continue;
+                }
+            };
+
+            let cache_entry: SsoCacheEntry = match serde_json::from_str(&content) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.logger
+                        .error(format!("Skipping unparsable JSON in {:?}: {}", path, e));
+                    continue;
+                }
+            };
+
+            if let (Some(start_url), Some(expires_at)) =
+                (cache_entry.startUrl, cache_entry.expiresAt)
+            {
+                if start_url == sso_start_url && expires_at > Utc::now() {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 }

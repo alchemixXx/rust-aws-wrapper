@@ -13,7 +13,7 @@ use logger::Logger;
 
 #[tokio::main]
 async fn main() -> CustomResult<()> {
-    Logger::init(logger::LogLevel::Warn);
+    Logger::init(logger::LogLevel::Trace);
     let logger = Logger::new();
     let cli = Cli::parse();
     let aws_cli = aws::AwsCli::new();
@@ -43,6 +43,12 @@ async fn main() -> CustomResult<()> {
             logger.info("Logging in to PIP");
             aws_cli.login_pip()?;
             logger.info("Logged in to PIP successfully");
+        }
+        Commands::Morning {} => {
+            logger.info("Good morning!");
+            aws_cli.login()?;
+            aws_cli.login_npm()?;
+            logger.info("Have a great day!");
         }
     }
 
