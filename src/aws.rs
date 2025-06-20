@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
 
 use chrono::{DateTime, Utc};
-use dirs;
+use dirs::home_dir;
 use glob::glob;
 use std::fs;
 
@@ -101,6 +101,7 @@ impl AwsCli {
         target: &str,
     ) -> CustomResult<String> {
         self.change_role(constants::DEV_ROLE)?;
+        self.repo_exists(repo)?;
 
         self.logger.info(format!("Creating PR in AWS: {}", repo));
 
@@ -166,7 +167,7 @@ impl AwsCli {
     }
 
     fn sso_token_still_valid(&self, sso_start_url: &str) -> CustomResult<bool> {
-        let cache_dir = dirs::home_dir()
+        let cache_dir = home_dir()
             .ok_or("Failed to get home directory")
             .map_err(|err| CustomError::CommandExecution(err.to_string()))?
             .join(".aws/sso/cache");
@@ -218,5 +219,36 @@ impl AwsCli {
         }
 
         Ok(false)
+    }
+
+    fn repo_exists(&self, repo_name: &str) -> CustomResult<bool> {
+        self.logger
+            .info(format!("Checking if repository '{}' exists", repo_name));
+        let command = format!(
+            "aws codecommit get-repository --repository-name {}",
+            repo_name
+        );
+        let output = self.execute_zsh_command(&command);
+
+        match output {
+            Ok(_) => {
+                self.logger
+                    .info(format!("Repository '{}' exists", repo_name));
+                Ok(true)
+            }
+            Err(err) => {
+                if err.to_string().contains("RepositoryDoesNotExistException") {
+                    self.logger
+                        .info(format!("Repository '{}' does not exist", repo_name));
+                    Ok(false)
+                } else {
+                    self.logger.error(format!(
+                        "Error checking repository '{}': {}",
+                        repo_name, err
+                    ));
+                    Err(err)
+                }
+            }
+        }
     }
 }
