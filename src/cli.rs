@@ -17,7 +17,7 @@ pub enum Commands {
 
         /// Source branch
         #[arg(short, long)]
-        source: String,
+        source: Option<String>,
 
         /// Target branch
         #[arg(short, long)]

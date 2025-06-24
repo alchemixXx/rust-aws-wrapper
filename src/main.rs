@@ -26,7 +26,12 @@ async fn main() -> CustomResult<()> {
         } => {
             let repo_name = location::get_repo_name()?;
             let result = aws_cli
-                .create_pull_request(repo_name.as_str(), name.as_deref(), &source, &target)
+                .create_pull_request(
+                    repo_name.as_str(),
+                    name.as_deref(),
+                    source.as_deref(),
+                    &target,
+                )
                 .await?;
             logger.info(format!("Pull request created successfully:\n{}", result));
         }

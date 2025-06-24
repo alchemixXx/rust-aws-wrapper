@@ -97,7 +97,7 @@ impl AwsCli {
         &self,
         repo: &str,
         title: Option<&str>,
-        source: &str,
+        source_branch: Option<&str>,
         target: &str,
     ) -> CustomResult<String> {
         self.change_role(constants::DEV_ROLE)?;
@@ -108,6 +108,11 @@ impl AwsCli {
         let title = match title {
             Some(t) => t.to_string(),
             None => self.get_commit_message()?,
+        };
+
+        let source = match source_branch {
+            Some(s) => s.to_string(),
+            None => self.get_current_branch()?,
         };
 
         let command = format!(
@@ -162,6 +167,19 @@ impl AwsCli {
             .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
 
         self.logger.info("Got commit message");
+
+        Ok(commit_message.trim().to_string())
+    }
+
+    fn get_current_branch(&self) -> CustomResult<String> {
+        self.logger.info("Getting current branch");
+
+        let output = self.execute_zsh_command("git branch --show-current")?;
+
+        let commit_message = String::from_utf8(output.stdout)
+            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
+
+        self.logger.info("Got current branch");
 
         Ok(commit_message.trim().to_string())
     }
