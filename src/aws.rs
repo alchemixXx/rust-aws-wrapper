@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::process::{Command, Output};
 
 use chrono::{DateTime, Utc};
 use dirs::home_dir;
@@ -11,6 +10,7 @@ use crate::{
     constants,
     custom_error::{CustomError, CustomResult},
     logger::Logger,
+    zsh_command::ZshCommand,
 };
 
 #[derive(Debug, Deserialize)]
@@ -33,36 +33,15 @@ struct PullRequest {
 
 pub struct AwsCli {
     logger: Logger,
+    zsh_command: ZshCommand,
 }
 
 impl AwsCli {
     pub fn new() -> Self {
         Self {
             logger: Logger::new(),
+            zsh_command: ZshCommand::new(),
         }
-    }
-
-    fn execute_zsh_command(&self, command: &str) -> CustomResult<Output> {
-        let output = Command::new("zsh")
-            .arg("-c")
-            .arg(command)
-            .output()
-            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
-
-        if !output.status.success() {
-            self.logger
-                .error(format!("Failed to execute command: {}", command));
-            self.logger.error(format!(
-                "Error: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-
-            return Err(CustomError::CommandExecution(
-                "Failed to execute command".to_string(),
-            ));
-        }
-
-        Ok(output)
     }
 
     pub fn login(&self) -> CustomResult<()> {
@@ -77,7 +56,7 @@ impl AwsCli {
             self.logger
                 .info("SSO token is not valid, checking for existing session...");
             let command = "aws sso login --sso-session sso";
-            self.execute_zsh_command(command)?;
+            self.zsh_command.execute(command)?;
         }
 
         self.logger.info("Logged in to AWS");
@@ -123,7 +102,7 @@ impl AwsCli {
             target
         );
 
-        let output = self.execute_zsh_command(&command)?;
+        let output = self.zsh_command.execute(&command)?;
 
         let str_json = String::from_utf8(output.stdout).expect("Failed to parse stdout");
         let commit: Commit = serde_json::from_str(&str_json).expect("Failed to parse json");
@@ -142,7 +121,7 @@ impl AwsCli {
     pub fn login_npm(&self) -> CustomResult<()> {
         self.logger.info("Logging in to NPM");
         let command = format!("aws codeartifact login --tool npm --repository conform5-npm-common --domain conform --domain-owner {} --region us-east-1 --profile {}", constants::DOMAIN_OWNER, constants::DEV_ROLE);
-        self.execute_zsh_command(&command)?;
+        self.zsh_command.execute(&command)?;
 
         self.logger.info("Logged in to NPM");
 
@@ -152,7 +131,7 @@ impl AwsCli {
     pub fn login_pip(&self) -> CustomResult<()> {
         self.logger.info("Logging in to NPM");
         let command = format!("aws codeartifact login --tool pip --repository conform5-python-common --domain conform5-python --domain-owner {} --region us-east-1 --profile {}", constants::DOMAIN_OWNER, constants::DEV_ROLE);
-        self.execute_zsh_command(&command)?;
+        self.zsh_command.execute(&command)?;
 
         self.logger.info("Logged in to NPM");
 
@@ -161,7 +140,7 @@ impl AwsCli {
     fn get_commit_message(&self) -> CustomResult<String> {
         self.logger.info("Getting commit message");
 
-        let output = self.execute_zsh_command("git log -1 --pretty=%B")?;
+        let output = self.zsh_command.execute("git log -1 --pretty=%B")?;
 
         let commit_message = String::from_utf8(output.stdout)
             .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
@@ -174,7 +153,7 @@ impl AwsCli {
     fn get_current_branch(&self) -> CustomResult<String> {
         self.logger.info("Getting current branch");
 
-        let output = self.execute_zsh_command("git branch --show-current")?;
+        let output = self.zsh_command.execute("git branch --show-current")?;
 
         let commit_message = String::from_utf8(output.stdout)
             .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
@@ -246,7 +225,7 @@ impl AwsCli {
             "aws codecommit get-repository --repository-name {}",
             repo_name
         );
-        let output = self.execute_zsh_command(&command);
+        let output = self.zsh_command.execute(&command);
 
         match output {
             Ok(_) => {

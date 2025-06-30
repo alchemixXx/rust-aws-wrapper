@@ -5,6 +5,7 @@ mod constants;
 mod custom_error;
 mod location;
 mod logger;
+mod zsh_command;
 
 use clap::Parser;
 use cli::{Cli, Commands};
@@ -24,7 +25,9 @@ async fn main() -> CustomResult<()> {
             source,
             target,
         } => {
-            let repo_name = location::get_repo_name()?;
+            let locator = location::Location::new();
+            let repo_name = locator.get_repo_name()?;
+            logger.info(format!("Repository name: {}", repo_name));
             let result = aws_cli
                 .create_pull_request(
                     repo_name.as_str(),

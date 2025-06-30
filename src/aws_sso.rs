@@ -1,10 +1,11 @@
 use anyhow::Context;
 use serde::Deserialize;
-use std::{env, fs, process::Command};
+use std::{env, fs};
 
 use crate::{
     custom_error::{CustomError, CustomResult},
     logger::Logger,
+    zsh_command::ZshCommand,
 };
 
 #[derive(Debug)]
@@ -44,6 +45,7 @@ struct SsoResponse {
 pub struct AwsSso {
     input: SsoInput,
     logger: Logger,
+    zsh_command: ZshCommand,
 }
 
 impl AwsSso {
@@ -51,6 +53,7 @@ impl AwsSso {
         Self {
             input: SsoInput { profile },
             logger: Logger::new(),
+            zsh_command: ZshCommand::new(),
         }
     }
 
@@ -231,37 +234,12 @@ impl AwsSso {
         token: &str,
         region: &str,
     ) -> CustomResult<RoleCredentials> {
-        let output = Command::new("aws")
-            .args([
-                "sso",
-                "get-role-credentials",
-                "--account-id",
-                account_id,
-                "--role-name",
-                role_name,
-                "--access-token",
-                token,
-                "--region",
-                region,
-            ])
-            .output()
-            .context("Failed to execute aws sso get-role-credentials")
-            .map_err(|err| {
-                self.logger
-                    .error(format!("Failed to execute AWS CLI command: {}", err));
-                CustomError::CommandExecution(format!("Failed to execute AWS CLI command: {}", err))
-            })?;
+        let command = format!(
+            "aws sso get-role-credentials --account-id {} --role-name {} --access-token {} --region {}",
+            account_id, role_name, token, region
+        );
 
-        if !output.status.success() {
-            self.logger.error(format!(
-                "AWS CLI command failed: {}",
-                String::from_utf8_lossy(&output.stdout)
-            ));
-            return Err(CustomError::CommandExecution(format!(
-                "AWS CLI command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )));
-        }
+        let output = self.zsh_command.execute(&command)?;
 
         let resp: SsoResponse = serde_json::from_slice(&output.stdout).map_err(|err| {
             self.logger

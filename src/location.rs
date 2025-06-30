@@ -1,30 +1,44 @@
-use crate::custom_error::{CustomError, CustomResult};
+use std::process::Output;
 
-pub fn get_current_dir() -> CustomResult<String> {
-    let current_dir = std::env::current_dir()
-        .map(|path| path.to_string_lossy().to_string())
-        .map_err(|err| {
-            CustomError::CommandExecution(format!("Failed to get current directory: {}", err))
-        })?;
+use crate::{
+    custom_error::{CustomError, CustomResult},
+    zsh_command::ZshCommand,
+};
 
-    println!("Current directory: {:?}", current_dir);
-    // std::process::exit(1);
-
-    Ok(current_dir)
+pub struct Location {
+    zsh_command: ZshCommand,
 }
 
-pub fn get_repo_name() -> CustomResult<String> {
-    let current_dir = get_current_dir()?;
-    let repo_name = current_dir
-        .split('/')
-        .last()
-        .ok_or_else(|| {
-            CustomError::CommandExecution("Failed to extract repository name".to_string())
-        })?
-        .to_string();
+impl Location {
+    pub fn new() -> Self {
+        Self {
+            zsh_command: ZshCommand::new(),
+        }
+    }
 
-    println!("Repository name: {:?}", repo_name);
-    // std::process::exit(1);
+    pub fn get_repo_name(&self) -> CustomResult<String> {
+        let command = "git rev-parse --show-toplevel";
+        let output: Output = self.zsh_command.execute(command)?;
 
-    Ok(repo_name)
+        let output_str = String::from_utf8(output.stdout).map_err(|err| {
+            CustomError::CommandExecution(format!("Failed to convert output to string: {}", err))
+        })?;
+
+        let result = self.get_name_from_output(&output_str)?;
+
+        Ok(result)
+    }
+
+    fn get_name_from_output(&self, output: &str) -> CustomResult<String> {
+        let repo_name = output
+            .trim()
+            .split('/')
+            .last()
+            .ok_or_else(|| {
+                CustomError::CommandExecution("Failed to extract repository name".to_string())
+            })?
+            .to_string();
+
+        Ok(repo_name)
+    }
 }
