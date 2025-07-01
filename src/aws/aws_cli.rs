@@ -6,12 +6,14 @@ use glob::glob;
 use std::fs;
 
 use crate::{
-    aws_sso::AwsSso,
+    aws::aws_pr::AwsPr,
     constants,
     custom_error::{CustomError, CustomResult},
     logger::Logger,
     zsh_command::ZshCommand,
 };
+
+use super::aws_sso::AwsSso;
 
 #[derive(Debug, Deserialize)]
 struct SsoCacheEntry {
@@ -80,38 +82,10 @@ impl AwsCli {
         target: &str,
     ) -> CustomResult<String> {
         self.change_role(constants::DEV_ROLE)?;
-        self.repo_exists(repo)?;
+        let pr_link = AwsPr::new()
+            .create(repo, title, source_branch, target)
+            .await?;
 
-        self.logger.info(format!("Creating PR in AWS: {}", repo));
-
-        let title = match title {
-            Some(t) => t.to_string(),
-            None => self.get_commit_message()?,
-        };
-
-        let source = match source_branch {
-            Some(s) => s.to_string(),
-            None => self.get_current_branch()?,
-        };
-
-        let command = format!(
-            "aws codecommit create-pull-request --title '{0}' --targets repositoryName={1},sourceReference={2},destinationReference={3}",
-            title,
-            repo,
-            source,
-            target
-        );
-
-        let output = self.zsh_command.execute(&command)?;
-
-        let str_json = String::from_utf8(output.stdout).expect("Failed to parse stdout");
-        let commit: Commit = serde_json::from_str(&str_json).expect("Failed to parse json");
-
-        let pr_link = format!(
-            "https://console.aws.amazon.com/codesuite/codecommit/repositories/{}/pull-requests/{}/details?region=us-east-1",
-            repo,
-            commit.pull_request.pull_request_id
-        );
         self.logger.info(format!("Created PR in AWS: {}", repo));
         println!("Pull Request Link: {}", pr_link);
 
@@ -136,31 +110,6 @@ impl AwsCli {
         self.logger.info("Logged in to NPM");
 
         Ok(())
-    }
-    fn get_commit_message(&self) -> CustomResult<String> {
-        self.logger.info("Getting commit message");
-
-        let output = self.zsh_command.execute("git log -1 --pretty=%B")?;
-
-        let commit_message = String::from_utf8(output.stdout)
-            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
-
-        self.logger.info("Got commit message");
-
-        Ok(commit_message.trim().to_string())
-    }
-
-    fn get_current_branch(&self) -> CustomResult<String> {
-        self.logger.info("Getting current branch");
-
-        let output = self.zsh_command.execute("git branch --show-current")?;
-
-        let commit_message = String::from_utf8(output.stdout)
-            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
-
-        self.logger.info("Got current branch");
-
-        Ok(commit_message.trim().to_string())
     }
 
     fn sso_token_still_valid(&self, sso_start_url: &str) -> CustomResult<bool> {
@@ -216,36 +165,5 @@ impl AwsCli {
         }
 
         Ok(false)
-    }
-
-    fn repo_exists(&self, repo_name: &str) -> CustomResult<bool> {
-        self.logger
-            .info(format!("Checking if repository '{}' exists", repo_name));
-        let command = format!(
-            "aws codecommit get-repository --repository-name {}",
-            repo_name
-        );
-        let output = self.zsh_command.execute(&command);
-
-        match output {
-            Ok(_) => {
-                self.logger
-                    .info(format!("Repository '{}' exists", repo_name));
-                Ok(true)
-            }
-            Err(err) => {
-                if err.to_string().contains("RepositoryDoesNotExistException") {
-                    self.logger
-                        .info(format!("Repository '{}' does not exist", repo_name));
-                    Ok(false)
-                } else {
-                    self.logger.error(format!(
-                        "Error checking repository '{}': {}",
-                        repo_name, err
-                    ));
-                    Err(err)
-                }
-            }
-        }
     }
 }

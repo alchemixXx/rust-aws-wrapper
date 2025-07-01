@@ -1,5 +1,4 @@
 mod aws;
-mod aws_sso;
 mod cli;
 mod constants;
 mod custom_error;
@@ -17,7 +16,7 @@ async fn main() -> CustomResult<()> {
     Logger::init(logger::LogLevel::Trace);
     let logger = Logger::new();
     let cli = Cli::parse();
-    let aws_cli = aws::AwsCli::new();
+    let aws_cli = aws::aws_cli::AwsCli::new();
 
     match cli.command {
         Commands::CreatePr {
