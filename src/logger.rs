@@ -52,9 +52,3 @@ impl Logger {
         log::error!("{}", message.as_ref());
     }
 }
-
-pub trait LoggerTrait {
-    fn get_logger(&self) -> Logger {
-        Logger::new()
-    }
-}

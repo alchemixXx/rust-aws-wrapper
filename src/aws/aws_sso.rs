@@ -1,12 +1,22 @@
-use anyhow::Context;
-use serde::Deserialize;
-use std::{env, fs};
-
 use crate::{
+    constants,
     custom_error::{CustomError, CustomResult},
     logger::Logger,
     zsh_command::ZshCommand,
 };
+use anyhow::Context;
+use chrono::{DateTime, Utc};
+use dirs::home_dir;
+use glob::glob;
+use serde::Deserialize;
+use std::{env, fs};
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SsoCacheEntry {
+    start_url: Option<String>,
+    expires_at: Option<DateTime<Utc>>,
+}
 
 #[derive(Debug)]
 struct SsoInput {
@@ -57,8 +67,28 @@ impl AwsSso {
         }
     }
 
+    pub fn login(&self) -> CustomResult<()> {
+        self.logger.debug("Logging in to AWS with SSO tokens");
+
+        let sso_is_valid = self.sso_token_still_valid(constants::SSO_START_URL)?;
+
+        if sso_is_valid {
+            self.logger
+                .debug("SSO token is valid, no need to log in again.");
+        } else {
+            self.logger
+                .debug("SSO token is not valid, checking for existing session...");
+            let command = "aws sso login --sso-session sso";
+            self.zsh_command.execute(command)?;
+        }
+
+        self.logger.debug("Logged in to AWS with SSO");
+
+        Ok(())
+    }
+
     pub fn set_sso_credentials(&self) -> CustomResult<()> {
-        self.logger.info("Setting AWS SSO credentials");
+        self.logger.debug("Setting AWS SSO credentials");
         let profile_info = self.get_sso_profile_info(&self.input.profile)?;
         let token = self.get_latest_sso_token()?;
 
@@ -72,7 +102,7 @@ impl AwsSso {
         // Set them as env vars for current process
         self.set_environment_variables(&creds)?;
 
-        self.logger.info("AWS SSO credentials set successfully");
+        self.logger.debug("AWS SSO credentials set successfully");
 
         Ok(())
     }
@@ -127,7 +157,7 @@ impl AwsSso {
 
     fn get_profile_block(&self, config_contents: &str, profile_name: &str) -> CustomResult<String> {
         self.logger
-            .info(format!("Fetching profile block for '{}'", profile_name));
+            .debug(format!("Fetching profile block for '{}'", profile_name));
         let profile_header = format!("[profile {}]", profile_name);
         let lines = config_contents.lines();
         let mut capture = false;
@@ -158,7 +188,7 @@ impl AwsSso {
                 profile_name
             )))
         } else {
-            self.logger.info(format!(
+            self.logger.debug(format!(
                 "Profile block for '{}' fetched successfully",
                 profile_name
             ));
@@ -168,7 +198,7 @@ impl AwsSso {
 
     fn parse_profile_values(&self, profile_block: &str) -> CustomResult<ProfileInfo> {
         self.logger
-            .info("Parsing profile values from profile block");
+            .debug("Parsing profile values from profile block");
         let mut account_id = None;
         let mut role_name = None;
         let mut region = None;
@@ -205,7 +235,7 @@ impl AwsSso {
 
     fn get_sso_profile_info(&self, profile_name: &str) -> CustomResult<ProfileInfo> {
         self.logger
-            .info(format!("Fetching SSO profile info for '{}'", profile_name));
+            .debug(format!("Fetching SSO profile info for '{}'", profile_name));
         let config_path = dirs::home_dir()
             .context("Failed to get home directory")
             .map_err(|err| {
@@ -251,13 +281,68 @@ impl AwsSso {
 
     fn set_environment_variables(&self, creds: &RoleCredentials) -> CustomResult<()> {
         self.logger
-            .info("Setting environment variables for AWS credentials");
+            .debug("Setting environment variables for AWS credentials");
         env::set_var("AWS_ACCESS_KEY_ID", &creds.access_key_id);
         env::set_var("AWS_SECRET_ACCESS_KEY", &creds.secret_access_key);
         env::set_var("AWS_SESSION_TOKEN", &creds.session_token);
 
-        self.logger.info("Environment variables set successfully");
+        self.logger.debug("Environment variables set successfully");
 
         Ok(())
+    }
+
+    fn sso_token_still_valid(&self, sso_start_url: &str) -> CustomResult<bool> {
+        let cache_dir = home_dir()
+            .ok_or("Failed to get home directory")
+            .map_err(|err| CustomError::CommandExecution(err.to_string()))?
+            .join(".aws/sso/cache");
+
+        let pattern = cache_dir.join("*.json");
+        let glob_pattern = pattern
+            .to_str()
+            .ok_or("Failed to convert pattern to string")
+            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
+
+        let paths =
+            glob(glob_pattern).map_err(|err| CustomError::CommandExecution(err.to_string()))?;
+
+        for entry in paths {
+            let path = match entry {
+                Ok(p) => p,
+                Err(e) => {
+                    self.logger
+                        .error(format!("Skipping invalid glob entry: {}", e));
+                    continue;
+                }
+            };
+
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.logger
+                        .error(format!("Skipping unreadable file {:?}: {}", path, e));
+                    continue;
+                }
+            };
+
+            let cache_entry: SsoCacheEntry = match serde_json::from_str(&content) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.logger
+                        .error(format!("Skipping unparsable JSON in {:?}: {}", path, e));
+                    continue;
+                }
+            };
+
+            if let (Some(start_url), Some(expires_at)) =
+                (cache_entry.start_url, cache_entry.expires_at)
+            {
+                if start_url == sso_start_url && expires_at > Utc::now() {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 }

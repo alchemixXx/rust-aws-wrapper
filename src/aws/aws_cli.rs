@@ -1,26 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use chrono::{DateTime, Utc};
-use dirs::home_dir;
-use glob::glob;
-use std::fs;
-
 use crate::{
-    aws::aws_pr::AwsPr,
-    constants,
-    custom_error::{CustomError, CustomResult},
-    logger::Logger,
+    aws::aws_pr::AwsPr, constants, custom_error::CustomResult, logger::Logger,
     zsh_command::ZshCommand,
 };
 
 use super::aws_sso::AwsSso;
-
-#[derive(Debug, Deserialize)]
-struct SsoCacheEntry {
-    startUrl: Option<String>,
-    expiresAt: Option<DateTime<Utc>>,
-    _accessToken: Option<String>,
-}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,19 +33,7 @@ impl AwsCli {
 
     pub fn login(&self) -> CustomResult<()> {
         self.logger.info("Logging in to AWS");
-
-        let sso_is_valid = self.sso_token_still_valid(constants::SSO_START_URL)?;
-
-        if sso_is_valid {
-            self.logger
-                .info("SSO token is valid, no need to log in again.");
-        } else {
-            self.logger
-                .info("SSO token is not valid, checking for existing session...");
-            let command = "aws sso login --sso-session sso";
-            self.zsh_command.execute(command)?;
-        }
-
+        AwsSso::new(constants::DEV_ROLE.to_string()).login()?;
         self.logger.info("Logged in to AWS");
 
         Ok(())
@@ -81,12 +54,15 @@ impl AwsCli {
         source_branch: Option<&str>,
         target: &str,
     ) -> CustomResult<String> {
+        self.logger
+            .info(format!("Creating pull request in AWS: {}", repo));
         self.change_role(constants::DEV_ROLE)?;
         let pr_link = AwsPr::new()
             .create(repo, title, source_branch, target)
             .await?;
 
-        self.logger.info(format!("Created PR in AWS: {}", repo));
+        self.logger
+            .info(format!("Created PR in AWS: {} : '{}'", repo, pr_link));
         println!("Pull Request Link: {}", pr_link);
 
         Ok(pr_link)
@@ -110,60 +86,5 @@ impl AwsCli {
         self.logger.info("Logged in to NPM");
 
         Ok(())
-    }
-
-    fn sso_token_still_valid(&self, sso_start_url: &str) -> CustomResult<bool> {
-        let cache_dir = home_dir()
-            .ok_or("Failed to get home directory")
-            .map_err(|err| CustomError::CommandExecution(err.to_string()))?
-            .join(".aws/sso/cache");
-
-        let pattern = cache_dir.join("*.json");
-        let glob_pattern = pattern
-            .to_str()
-            .ok_or("Failed to convert pattern to string")
-            .map_err(|err| CustomError::CommandExecution(err.to_string()))?;
-
-        let paths =
-            glob(glob_pattern).map_err(|err| CustomError::CommandExecution(err.to_string()))?;
-
-        for entry in paths {
-            let path = match entry {
-                Ok(p) => p,
-                Err(e) => {
-                    self.logger
-                        .error(format!("Skipping invalid glob entry: {}", e));
-                    continue;
-                }
-            };
-
-            let content = match fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(e) => {
-                    self.logger
-                        .error(format!("Skipping unreadable file {:?}: {}", path, e));
-                    continue;
-                }
-            };
-
-            let cache_entry: SsoCacheEntry = match serde_json::from_str(&content) {
-                Ok(c) => c,
-                Err(e) => {
-                    self.logger
-                        .error(format!("Skipping unparsable JSON in {:?}: {}", path, e));
-                    continue;
-                }
-            };
-
-            if let (Some(start_url), Some(expires_at)) =
-                (cache_entry.startUrl, cache_entry.expiresAt)
-            {
-                if start_url == sso_start_url && expires_at > Utc::now() {
-                    return Ok(true);
-                }
-            }
-        }
-
-        Ok(false)
     }
 }
