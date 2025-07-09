@@ -22,6 +22,10 @@ pub enum Commands {
         /// Target branch
         #[arg(short, long)]
         target: String,
+
+        /// Abort on merge conflicts
+        #[arg(short, long, default_value_t = false)]
+        abort: bool,
     },
     Login {},
     LoginNpm {},

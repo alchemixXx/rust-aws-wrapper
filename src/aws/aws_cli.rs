@@ -53,12 +53,13 @@ impl AwsCli {
         title: Option<&str>,
         source_branch: Option<&str>,
         target: &str,
+        abort_early: bool,
     ) -> CustomResult<String> {
         self.logger
             .info(format!("Creating pull request in AWS: {}", repo));
         self.change_role(constants::DEV_ROLE)?;
         let pr_link = AwsPr::new()
-            .create(repo, title, source_branch, target)
+            .create(repo, title, source_branch, target, abort_early)
             .await?;
 
         self.logger

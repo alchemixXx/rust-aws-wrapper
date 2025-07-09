@@ -23,6 +23,7 @@ async fn main() -> CustomResult<()> {
             name,
             source,
             target,
+            abort,
         } => {
             let locator = location::Location::new();
             let repo_name = locator.get_repo_name()?;
@@ -33,6 +34,7 @@ async fn main() -> CustomResult<()> {
                     name.as_deref(),
                     source.as_deref(),
                     &target,
+                    abort,
                 )
                 .await?;
             logger.info(format!("Pull request created successfully:\n{}", result));

@@ -42,6 +42,7 @@ impl AwsPr {
         title: Option<&str>,
         source_branch: Option<&str>,
         target: &str,
+        abort_early: bool,
     ) -> CustomResult<String> {
         self.repo_exists(repo)?;
 
@@ -57,7 +58,21 @@ impl AwsPr {
             None => self.get_current_branch()?,
         };
 
-        self.check_merge_conflicts(repo, target, &source)?;
+        let has_conflicts = self.has_merge_conflicts(repo, target, &source)?;
+
+        if has_conflicts {
+            self.logger.warn(format!(
+                "\n\n\nSource ({0}) and target ({1}) can't be merged due to conflicts\n\n\n",
+                source, target
+            ));
+
+            if abort_early {
+                self.logger.warn("Aborting due to merge conflicts");
+                return Err(CustomError::CommandExecution(
+                    "Aborting due to merge conflicts".to_string(),
+                ));
+            }
+        }
 
         let command = format!(
             "aws codecommit create-pull-request --title '{0}' --targets repositoryName={1},sourceReference={2},destinationReference={3}",
@@ -82,12 +97,12 @@ impl AwsPr {
         Ok(pr_link)
     }
 
-    fn check_merge_conflicts(
+    fn has_merge_conflicts(
         &self,
         repo_name: &str,
         target_branch: &str,
         source_branch: &str,
-    ) -> CustomResult<()> {
+    ) -> CustomResult<bool> {
         self.logger.debug("Checking for merge conflicts");
 
         let command = format!(
@@ -113,16 +128,12 @@ impl AwsPr {
             }
         };
 
-        if conflicts_output.mergeable {
-            self.logger.debug("No merge conflicts found");
-        } else {
-            self.logger.warn(format!(
-                "\n\n\nSource ({0}) and target ({1}) can't be merged due to conflicts\n\n\n",
-                source_branch, target_branch
-            ));
-        }
+        self.logger.debug(format!(
+            "Checked merge conflicts: {}",
+            conflicts_output.mergeable
+        ));
 
-        Ok(())
+        Ok(!conflicts_output.mergeable)
     }
 
     fn get_commit_message(&self) -> CustomResult<String> {
