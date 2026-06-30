@@ -13,7 +13,7 @@ use logger::Logger;
 
 #[tokio::main]
 async fn main() -> CustomResult<()> {
-    Logger::init(logger::LogLevel::Trace);
+    Logger::init(logger::LogLevel::Info);
     let logger = Logger::new();
     let cli = Cli::parse();
     let aws_cli = aws::aws_cli::AwsCli::new();
@@ -58,6 +58,10 @@ async fn main() -> CustomResult<()> {
             aws_cli.login()?;
             aws_cli.login_npm()?;
             logger.info("Have a great day!");
+        }
+        Commands::Logs {} => {
+            let aws_logs = aws::aws_logs::AwsLogs::new();
+            aws_logs.run()?;
         }
     }
 

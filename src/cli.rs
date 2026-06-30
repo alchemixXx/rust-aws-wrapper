@@ -31,4 +31,6 @@ pub enum Commands {
     LoginNpm {},
     LoginPip {},
     Morning {},
+    /// Fetch CloudWatch log events and save to logs.json
+    Logs {},
 }
