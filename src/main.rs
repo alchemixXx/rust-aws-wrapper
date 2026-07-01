@@ -1,5 +1,6 @@
 mod aws;
 mod cli;
+pub mod config;
 mod constants;
 mod custom_error;
 mod location;

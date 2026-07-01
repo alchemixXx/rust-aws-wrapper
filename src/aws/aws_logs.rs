@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     aws::aws_sso::AwsSso,
+    config::AppConfig,
     custom_error::{CustomError, CustomResult},
     logger::Logger,
     zsh_command::ZshCommand,
@@ -70,11 +71,18 @@ impl AwsLogs {
 
     /// Main entry point for the `logs` command.
     pub fn run(&self) -> CustomResult<()> {
-        // Step 1: Profile selection
-        let profile = self.select_profile()?;
+        let config = AppConfig::load();
 
-        // Step 2: SSO authentication
-        self.authenticate(&profile)?;
+        if config.auth.disable_sso {
+            self.logger
+                .info("SSO disabled via config — using local AWS credentials");
+        } else {
+            // Step 1: Profile selection
+            let profile = self.select_profile()?;
+
+            // Step 2: SSO authentication
+            self.authenticate(&profile)?;
+        }
 
         // Step 3: Log group selection
         let log_group = self.select_log_group()?;
