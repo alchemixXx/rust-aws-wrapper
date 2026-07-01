@@ -68,7 +68,7 @@ impl AwsLogs {
         }
     }
 
-    /// Main entry point for the `raw logs` command.
+    /// Main entry point for the `logs` command.
     pub fn run(&self) -> CustomResult<()> {
         // Step 1: Profile selection
         let profile = self.select_profile()?;
@@ -89,6 +89,30 @@ impl AwsLogs {
         let events = self.fetch_logs(&log_group, start_ms, end_ms, log_id.as_deref())?;
 
         // Step 7: Write to file
+        self.write_output(&events)?;
+
+        Ok(())
+    }
+
+    /// Main entry point for the `logs-raw` command.
+    /// Same as `run` but prompts for AWS credentials directly instead of SSO.
+    pub fn run_raw(&self) -> CustomResult<()> {
+        // Step 1: Prompt for AWS credentials
+        self.authenticate_raw()?;
+
+        // Step 2: Log group selection
+        let log_group = self.select_log_group()?;
+
+        // Step 3: Time range prompts
+        let (start_ms, end_ms) = self.prompt_time_range()?;
+
+        // Step 4: Optional logId filter
+        let log_id = self.prompt_log_id()?;
+
+        // Step 5: Fetch logs
+        let events = self.fetch_logs(&log_group, start_ms, end_ms, log_id.as_deref())?;
+
+        // Step 6: Write to file
         self.write_output(&events)?;
 
         Ok(())
@@ -161,6 +185,49 @@ impl AwsLogs {
         sso.set_sso_credentials()?;
 
         self.logger.info("SSO authentication successful");
+        Ok(())
+    }
+
+    // ─── Raw Authentication (manual tokens) ──────────────────────────────
+
+    fn authenticate_raw(&self) -> CustomResult<()> {
+        self.logger.info("Prompting for AWS credentials");
+
+        let access_key_id: String = Input::new()
+            .with_prompt("AWS_ACCESS_KEY_ID")
+            .interact_text()
+            .map_err(|err| {
+                CustomError::CommandExecution(format!("Input failed: {}", err))
+            })?;
+
+        let secret_access_key: String = Input::new()
+            .with_prompt("AWS_SECRET_ACCESS_KEY")
+            .interact_text()
+            .map_err(|err| {
+                CustomError::CommandExecution(format!("Input failed: {}", err))
+            })?;
+
+        let session_token: String = Input::new()
+            .with_prompt("AWS_SESSION_TOKEN")
+            .interact_text()
+            .map_err(|err| {
+                CustomError::CommandExecution(format!("Input failed: {}", err))
+            })?;
+
+        let region: String = Input::new()
+            .with_prompt("AWS_DEFAULT_REGION")
+            .default("eu-west-1".to_string())
+            .interact_text()
+            .map_err(|err| {
+                CustomError::CommandExecution(format!("Input failed: {}", err))
+            })?;
+
+        std::env::set_var("AWS_ACCESS_KEY_ID", access_key_id.trim());
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", secret_access_key.trim());
+        std::env::set_var("AWS_SESSION_TOKEN", session_token.trim());
+        std::env::set_var("AWS_DEFAULT_REGION", region.trim());
+
+        self.logger.info("AWS credentials set from manual input");
         Ok(())
     }
 

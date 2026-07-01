@@ -63,6 +63,10 @@ async fn main() -> CustomResult<()> {
             let aws_logs = aws::aws_logs::AwsLogs::new();
             aws_logs.run()?;
         }
+        Commands::LogsRaw {} => {
+            let aws_logs = aws::aws_logs::AwsLogs::new();
+            aws_logs.run_raw()?;
+        }
     }
 
     Ok(())

@@ -33,4 +33,6 @@ pub enum Commands {
     Morning {},
     /// Fetch CloudWatch log events and save to logs.json
     Logs {},
+    /// Fetch CloudWatch log events (provide AWS credentials directly, no SSO)
+    LogsRaw {},
 }
